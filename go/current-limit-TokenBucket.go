@@ -3,38 +3,55 @@ package main
 //模拟令牌桶限流
 
 import (
-	"math"
-	"sync"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
-func mian() {
+//https://github.com/juju/ratelimit  应用比较广泛的令牌桶包
+//https://en.wikipedia.org/wiki/Token_bucket 令牌桶算法
 
+type BucketLimiter struct {
+	lastRequestTime int64
+	tokenSurplus    int64 //剩余令牌数
+	qps             int64 //每秒请求数
 }
 
-// 定义令牌桶结构
-type tokenBucket struct {
-	timestamp time.Time // 当前时间戳
-	capacity  float64   // 桶的容量（存放令牌的最大量）
-	rate      float64   // 令牌放入速度
-	tokens    float64   // 当前令牌总量
-	lock      sync.Mutex
+//NewBucketLimiter 初始化令牌桶
+func NewBucketLimiter(tokenSurplus, qps int64) *BucketLimiter {
+	return &BucketLimiter{
+		lastRequestTime: time.Now().Unix(),
+		tokenSurplus:    tokenSurplus,
+		qps:             qps,
+	}
 }
 
-// 判断是否获取令牌（若能获取，则处理请求）
-func (s *tokenBucket) getToken() bool {
-	now := time.Now()
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	// 先添加令牌
-	leftTokens := math.Max(s.capacity, s.tokens+now.Sub(s.timestamp).Seconds()*s.rate)
-	if leftTokens < 1 {
-		// 若桶中一个令牌都没有了，则拒绝
-		return false
-	} else {
-		// 桶中还有令牌，领取令牌
-		s.tokens -= 1
-		s.timestamp = now
+//getToken 获取令牌
+func (B *BucketLimiter) getToken() bool {
+	now := time.Now().Unix()
+	temp := (now-B.lastRequestTime)*B.qps + B.tokenSurplus
+	tokenNow := B.getMin(temp, B.qps)
+	if tokenNow > 0 {
+		B.lastRequestTime = now
+		B.tokenSurplus--
 		return true
 	}
+	return false
+}
+
+//getMin 比较两个值 输出最小
+func (B *BucketLimiter) getMin(a, b int64) int64 {
+	if a > b {
+		return b
+	}
+	return a
+}
+
+func main() {
+	tokenBucket := NewBucketLimiter(5, 5)
+
+	for i := 0; i < 100; i++ {
+		spew.Dump(tokenBucket.getToken())
+	}
+
 }
